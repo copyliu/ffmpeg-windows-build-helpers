@@ -200,15 +200,21 @@ do_git_checkout() {
     update_to_desired_git_branch_or_revision $to_dir $desired_branch
   else
     cd $to_dir
-    echo "Updating to latest $to_dir version... $desired_branch"
     old_git_version=`git rev-parse HEAD`
 
-    # if we're on a special branch, don't even bother doing a git pull, assume we're already there...
     if [[ -z $desired_branch ]]; then
       if [[ $git_get_latest = "y" ]]; then
+        echo "Updating to latest $to_dir version... $desired_branch"
         git pull
       else
         echo "not doing git get latest pull for latest code $to_dir"
+      fi
+    else
+      if [[ $git_get_latest = "y" ]]; then
+        echo "Doing git fetch $to_dir in case it affects the desired branch [$desired_branch]"
+        git fetch
+      else
+        echo "not doing git fetch $to_dir to see if it affected desired branch [$desired_branch]"
       fi
     fi
     update_to_desired_git_branch_or_revision "." $desired_branch
@@ -927,9 +933,9 @@ build_mp4box() { # like build_gpac
   sed -i "s/has_dvb4linux=\"yes\"/has_dvb4linux=\"no\"/g" configure
   sed -i "s/`uname -s`/MINGW32/g" configure
   # XXX do I want to disable more things here?
-  generic_configure "--static-mp4box --enable-static-bin  --extra-libs=-lws2_32 -lwinmm"
-  # I seem unable to pass 2 into the same config line so do it again...
-  sed -i "s/EXTRALIBS=.*/EXTRALIBS=-lws2_32 -lwinmm/g" config.mak
+  generic_configure "--static-mp4box --enable-static-bin"
+  # I seem unable to pass 3 libs into the same config line so do it with sed...
+  sed -i "s/EXTRALIBS=.*/EXTRALIBS=-lws2_32 -lwinmm -lz/g" config.mak
   cd src
   rm already_
   do_make "CC=${cross_prefix}gcc AR=${cross_prefix}ar RANLIB=${cross_prefix}ranlib PREFIX= STRIP=${cross_prefix}strip"
@@ -957,6 +963,23 @@ apply_ffmpeg_patch() {
  else
    echo "patch $patch_name already applied"
  fi
+}
+
+build_libMXF() {
+  download_and_unpack_file http://sourceforge.net/projects/ingex/files/1.0.0/libMXF/libMXF-src-1.0.0.tgz "libMXF-src-1.0.0"
+  cd libMXF-src-1.0.0
+  apply_patch https://raw.github.com/rdp/ffmpeg-windows-build-helpers/master/patches/libMXF.diff
+  do_make "MINGW_CC_PREFIX=$cross_prefix"
+  #
+  # Manual equivalent of make install.
+  #
+  cp libMXF/lib/libMXF.a $mingw_w64_x86_64_prefix/lib/libMXF.a
+  cp libMXF++/libMXF++/libMXF++.a $mingw_w64_x86_64_prefix/lib/libMXF++.a
+  mv libMXF/examples/writeaviddv50/writeaviddv50 libMXF/examples/writeaviddv50/writeaviddv50.exe
+  mv libMXF/examples/writeavidmxf/writeavidmxf libMXF/examples/writeavidmxf/writeavidmxf.exe
+  cp libMXF/examples/writeaviddv50/writeaviddv50.exe $mingw_w64_x86_64_prefix/bin/writeaviddv50.exe
+  cp libMXF/examples/writeavidmxf/writeavidmxf.exe $mingw_w64_x86_64_prefix/bin/writeavidmxf.exe
+  cd ..
 }
 
 build_ffmpeg() {
@@ -1028,7 +1051,7 @@ build_ffmpeg() {
 find_all_build_exes() {
   found=""
 # NB that we're currently in the sandbox dir
-  for file in `find . -name ffmpeg.exe` `find . -name ffmpeg_g.exe` `find . -name ffplay.exe` `find . -name MP4Box.exe` `find . -name mplayer.exe` `find . -name mencoder.exe` `find . -name avconv.exe` `find . -name avprobe.exe` `find . -name x264.exe`; do
+  for file in `find . -name ffmpeg.exe` `find . -name ffmpeg_g.exe` `find . -name ffplay.exe` `find . -name MP4Box.exe` `find . -name mplayer.exe` `find . -name mencoder.exe` `find . -name avconv.exe` `find . -name avprobe.exe` `find . -name x264.exe` `find . -name writeavidmxf.exe` `find . -name writeaviddv50.exe`; do
     found="$found $(readlink -f $file)"
   done
 
@@ -1100,6 +1123,9 @@ build_dependencies() {
 
 build_apps() {
   # now the things that use the dependencies...
+  if [[ $build_libmxf = "y" ]]; then
+    build_libMXF
+  fi
   if [[ $build_mp4box = "y" ]]; then
     build_mp4box
   fi
@@ -1135,6 +1161,7 @@ gcc_cpu_count=1 # allow them to specify more than 1, but default to the one that
 build_ffmpeg_static=y
 build_ffmpeg_shared=n
 build_libav=n
+build_libmxf=n
 build_mp4box=n
 build_mplayer=n
 build_vlc=n
@@ -1152,7 +1179,8 @@ while true; do
       --disable-nonfree=y (set to n to include nonfree like libfdk-aac) 
       --sandbox-ok=n [skip sandbox prompt if y] 
       --rebuild-compilers=y (prompts you which compilers to build, even if you already have some)
-      --defaults|-d [skip all prompts, just use defaults] 
+      --defaults|-d [skip all prompts, just build ffmpeg static with some reasonable defaults like no git updates] 
+      --build-libmxf=n [builds libMXF, libMXF++, writeavidmxfi.exe and writeaviddv50.exe from the BBC-Ingex project] 
       --build-mp4box=n [builds MP4Box.exe from the gpac project] 
       --build-mplayer=n [builds mplayer.exe and mencoder.exe] 
       --build-vlc=n [builds a [rather bloated] vlc.exe] 
@@ -1163,6 +1191,7 @@ while true; do
        "; exit 0 ;;
     --sandbox-ok=* ) sandbox_ok="${1#*=}"; shift ;;
     --gcc-cpu-count=* ) gcc_cpu_count="${1#*=}"; shift ;;
+    --build-libmxf=* ) build_libmxf="${1#*=}"; shift ;;
     --build-mp4box=* ) build_mp4box="${1#*=}"; shift ;;
     --git-get-latest=* ) git_get_latest="${1#*=}"; shift ;;
     --build-mplayer=* ) build_mplayer="${1#*=}"; shift ;;
@@ -1179,7 +1208,7 @@ while true; do
        export CFLAGS="${1#*=}"; original_cflags="${1#*=}"; echo "setting cflags as $original_cflags"; shift ;;
     --build-vlc=* ) build_vlc="${1#*=}"; shift ;;
     --disable-nonfree=* ) disable_nonfree="${1#*=}"; shift ;;
-    -d ) gcc_cpu_count=2; disable_nonfree="y"; sandbox_ok="y"; build_choice="multi"; shift ;;
+    -d         ) gcc_cpu_count=2; disable_nonfree="y"; sandbox_ok="y"; build_choice="multi"; git_get_latest="n" ; shift ;;
     --defaults ) gcc_cpu_count=2; disable_nonfree="y"; sandbox_ok="y"; build_choice="multi"; git_get_latest="n" ; shift ;;
     --build-choice=* ) build_choice="${1#*=}"; shift ;;
     --build-ffmpeg-static=* ) build_ffmpeg_static="${1#*=}"; shift ;;
@@ -1228,6 +1257,7 @@ if [ -d "mingw-w64-x86_64" ]; then # they installed a 64-bit compiler
   cd ..
 fi
 
+echo "searching for all local exe's..."
 for file in $(find_all_build_exes); do
   echo "built $file"
 done
