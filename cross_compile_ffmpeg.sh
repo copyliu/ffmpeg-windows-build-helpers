@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# set -x
 # ffmpeg windows cross compile helper/download script
 # Copyright (C) 2012 Roger Pack, the script is under the GPLv3, but output FFmpeg's aren't necessarily
 
@@ -23,7 +24,7 @@ yes_no_sel () {
 }
 
 check_missing_packages () {
-  local check_packages=('curl' 'pkg-config' 'make' 'git' 'svn' 'cmake' 'gcc' 'autoconf' 'libtool' 'automake' 'yasm' 'cvs' 'flex' 'bison' 'makeinfo' 'g++' 'ed')
+  local check_packages=('curl' 'pkg-config' 'make' 'git' 'svn' 'cmake' 'gcc' 'autoconf' 'libtool' 'automake' 'yasm' 'cvs' 'flex' 'bison' 'makeinfo' 'g++' 'ed' 'hg')
   for package in "${check_packages[@]}"; do
     type -P "$package" >/dev/null || missing_packages=("$package" "${missing_packages[@]}")
   done
@@ -32,7 +33,7 @@ check_missing_packages () {
     clear
     echo "Could not find the following execs (svn is actually package subversion, makeinfo is actually package texinfo if you're missing them): ${missing_packages[@]}"
     echo 'Install the missing packages before running this script.'
-    echo "for ubuntu: $ sudo apt-get install subversion texinfo g++ bison flex cvs yasm automake libtool autoconf gcc cmake git make pkg-config zlib1g-dev" 
+    echo "for ubuntu: $ sudo apt-get install subversion texinfo g++ bison flex cvs yasm automake libtool autoconf gcc cmake git make pkg-config zlib1g-dev mercurial" 
     exit 1
   fi
 
@@ -290,11 +291,14 @@ do_make_install() {
 }
 
 do_cmake() {
-  extra_args="$1"
+  extra_args="$1" 
   local touch_name=$(get_small_touchfile_name already_ran_cmake "$extra_args")
 
   if [ ! -f $touch_name ]; then
-    cmake . -DENABLE_STATIC_RUNTIME=1 -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_RANLIB=${cross_prefix}ranlib -DCMAKE_C_COMPILER=${cross_prefix}gcc -DCMAKE_CXX_COMPILER=${cross_prefix}g++ -DCMAKE_RC_COMPILER=${cross_prefix}windres -DCMAKE_INSTALL_PREFIX=$mingw_w64_x86_64_prefix $extra_args  || exit 1
+    local cur_dir2=$(pwd)
+    echo doing cmake in $cur_dir2 with PATH=$PATH  with extra_args=$extra_args like this:
+    echo cmake . -DENABLE_STATIC_RUNTIME=1 -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_RANLIB=${cross_prefix}ranlib -DCMAKE_C_COMPILER=${cross_prefix}gcc -DCMAKE_CXX_COMPILER=${cross_prefix}g++ -DCMAKE_RC_COMPILER=${cross_prefix}windres -DCMAKE_INSTALL_PREFIX=$mingw_w64_x86_64_prefix $extra_args || exit 1
+    cmake . -DENABLE_STATIC_RUNTIME=1 -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_RANLIB=${cross_prefix}ranlib -DCMAKE_C_COMPILER=${cross_prefix}gcc -DCMAKE_CXX_COMPILER=${cross_prefix}g++ -DCMAKE_RC_COMPILER=${cross_prefix}windres -DCMAKE_INSTALL_PREFIX=$mingw_w64_x86_64_prefix $extra_args || exit 1
     touch $touch_name || exit 1
   fi
 }
@@ -346,6 +350,37 @@ generic_download_and_install() {
 generic_configure_make_install() {
   generic_configure "$1"
   do_make_install
+}
+
+build_x265() {
+  if [[ -d x265 ]]; then
+    cd x265
+    if [[ $git_get_latest = "y" ]]; then
+      echo "doing hg pull x265"
+      hg pull || exit 1
+    else
+      echo "not doing hg pull x265"
+    fi
+  else
+    hg clone https://bitbucket.org/multicoreware/x265 || exit 1
+    cd x265
+  fi    
+  cd source
+
+  local old_hg_version=`hg --debug id -i`
+  hg checkout 9b0c9b # they had some breaking changes...though ffmpeg might break soon with this :(
+  local new_hg_version=`hg --debug id -i`  
+  if [[ "$old_hg_version" != "$new_hg_version" ]]; then
+    echo "got upstream hg changes, forcing rebuild...x265"
+    rm already*
+  else
+    echo "still at hg $new_hg_version x265"
+  fi
+
+  # Unix Makefiles -> unix scripts for making
+  do_cmake # never could figure out how to get this parameter to work, arg bash! '-G "Unix Makefiles" ' thankfully not needed
+  do_make_install
+  cd ../..
 }
 
 #x264_profile_guided=y
@@ -706,9 +741,13 @@ build_libxvid() {
   fi
   do_configure "--host=$host_target --prefix=$mingw_w64_x86_64_prefix $config_opts" # no static option...
   sed -i "s/-mno-cygwin//" platform.inc # remove old compiler flag that now apparently breaks us
+
+  cpu_count=1 # possibly can't build multi-thread http://betterlogic.com/roger/2014/02/xvid-build-woe/
   do_make_install
+  cpu_count=$original_cpu_count
   cd ../../..
-  # force a static build after the fact
+
+  # force a static build after the fact by only installing the .a file
   if [[ -f "$mingw_w64_x86_64_prefix/lib/xvidcore.dll" ]]; then
     rm $mingw_w64_x86_64_prefix/lib/xvidcore.dll || exit 1
     mv $mingw_w64_x86_64_prefix/lib/xvidcore.a $mingw_w64_x86_64_prefix/lib/libxvidcore.a || exit 1
@@ -988,8 +1027,8 @@ build_ffmpeg() {
   local git_url="https://github.com/FFmpeg/FFmpeg.git"
   local output_dir="ffmpeg_git"
 
-  # FFmpeg 
-  local extra_configure_opts="--enable-libsoxr --enable-fontconfig --enable-libass --enable-libutvideo --enable-libbluray --enable-iconv --enable-libtwolame --extra-cflags=-DLIBTWOLAME_STATIC --enable-libzvbi --enable-libcaca --enable-libmodplug --extra-libs=-lstdc++ --extra-libs=-lpng --enable-libvidstab"
+  # FFmpeg + libav compatible options
+  local extra_configure_opts="--enable-libsoxr --enable-fontconfig --enable-libass --enable-libutvideo --enable-libbluray --enable-iconv --enable-libtwolame --extra-cflags=-DLIBTWOLAME_STATIC --enable-libzvbi --enable-libcaca --enable-libmodplug --extra-libs=-lstdc++ --extra-libs=-lpng --enable-libvidstab --enable-libx265"
 
   if [[ $type = "libav" ]]; then
     # libav [ffmpeg fork]  has a few missing options?
@@ -1097,6 +1136,7 @@ build_dependencies() {
   build_libxavs
   build_libsoxr
   build_x264
+  build_x265
   build_lame
   build_twolame
   build_vidstab
