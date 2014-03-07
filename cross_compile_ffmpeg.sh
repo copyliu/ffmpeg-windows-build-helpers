@@ -353,22 +353,25 @@ generic_configure_make_install() {
 }
 
 build_x265() {
+  local old_hg_version
   if [[ -d x265 ]]; then
     cd x265
     if [[ $git_get_latest = "y" ]]; then
-      echo "doing hg pull x265"
-      hg pull || exit 1
+      echo "doing hg pull -u x265"
+      old_hg_version=`hg --debug id -i`
+      hg pull -u || exit 1
     else
       echo "not doing hg pull x265"
     fi
   else
     hg clone https://bitbucket.org/multicoreware/x265 || exit 1
     cd x265
+    old_hg_version=`hg --debug id -i`
   fi    
   cd source
 
-  local old_hg_version=`hg --debug id -i`
-  hg checkout 9b0c9b # they had some breaking changes...though ffmpeg might break soon with this :(
+  # hg checkout 9b0c9b # no longer needed...
+
   local new_hg_version=`hg --debug id -i`  
   if [[ "$old_hg_version" != "$new_hg_version" ]]; then
     echo "got upstream hg changes, forcing rebuild...x265"
@@ -377,8 +380,7 @@ build_x265() {
     echo "still at hg $new_hg_version x265"
   fi
 
-  # Unix Makefiles -> unix scripts for making
-  do_cmake # never could figure out how to get this parameter to work, arg bash! '-G "Unix Makefiles" ' thankfully not needed
+  do_cmake "-DENABLE_SHARED=OFF"
   do_make_install
   cd ../..
 }
@@ -921,7 +923,7 @@ build_vlc() {
   if [[ ! -f "configure" ]]; then
     ./bootstrap
   fi 
-  do_configure "--disable-libgcrypt --disable-a52 --host=$host_target --disable-lua --disable-mad --enable-qt --disable-sdl" # don't have lua mingw yet, etc. [vlc has --disable-sdl [?]]
+  do_configure "--disable-x265 --disable-libgcrypt --disable-a52 --host=$host_target --disable-lua --disable-mad --enable-qt --disable-sdl" # don't have lua mingw yet, etc. [vlc has --disable-sdl [?]] x265 disabled until we care enough...
   for file in `find . -name *.exe`; do
     rm $file # try to force a rebuild...though there are tons of .a files we aren't rebuilding :|
   done
@@ -1010,14 +1012,14 @@ build_libMXF() {
   apply_patch https://raw.github.com/rdp/ffmpeg-windows-build-helpers/master/patches/libMXF.diff
   do_make "MINGW_CC_PREFIX=$cross_prefix"
   #
-  # Manual equivalent of make install.
+  # Manual equivalent of make install.  Enable it if desired.  We shouldn't need it in theory since we never use libMXF.a file and can just hand pluck out the *.exe files...
   #
-  cp libMXF/lib/libMXF.a $mingw_w64_x86_64_prefix/lib/libMXF.a
-  cp libMXF++/libMXF++/libMXF++.a $mingw_w64_x86_64_prefix/lib/libMXF++.a
-  mv libMXF/examples/writeaviddv50/writeaviddv50 libMXF/examples/writeaviddv50/writeaviddv50.exe
-  mv libMXF/examples/writeavidmxf/writeavidmxf libMXF/examples/writeavidmxf/writeavidmxf.exe
-  cp libMXF/examples/writeaviddv50/writeaviddv50.exe $mingw_w64_x86_64_prefix/bin/writeaviddv50.exe
-  cp libMXF/examples/writeavidmxf/writeavidmxf.exe $mingw_w64_x86_64_prefix/bin/writeavidmxf.exe
+  # cp libMXF/lib/libMXF.a $mingw_w64_x86_64_prefix/lib/libMXF.a
+  # cp libMXF++/libMXF++/libMXF++.a $mingw_w64_x86_64_prefix/lib/libMXF++.a
+  # mv libMXF/examples/writeaviddv50/writeaviddv50 libMXF/examples/writeaviddv50/writeaviddv50.exe
+  # mv libMXF/examples/writeavidmxf/writeavidmxf libMXF/examples/writeavidmxf/writeavidmxf.exe
+  # cp libMXF/examples/writeaviddv50/writeaviddv50.exe $mingw_w64_x86_64_prefix/bin/writeaviddv50.exe
+  # cp libMXF/examples/writeavidmxf/writeavidmxf.exe $mingw_w64_x86_64_prefix/bin/writeavidmxf.exe
   cd ..
 }
 
