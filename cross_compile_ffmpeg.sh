@@ -744,7 +744,7 @@ build_libxvid() {
   do_configure "--host=$host_target --prefix=$mingw_w64_x86_64_prefix $config_opts" # no static option...
   sed -i "s/-mno-cygwin//" platform.inc # remove old compiler flag that now apparently breaks us
 
-  cpu_count=1 # possibly can't build multi-thread http://betterlogic.com/roger/2014/02/xvid-build-woe/
+  cpu_count=1 # possibly can't build this multi-thread ? http://betterlogic.com/roger/2014/02/xvid-build-woe/
   do_make_install
   cpu_count=$original_cpu_count
   cd ../../..
@@ -981,7 +981,7 @@ build_mp4box() { # like build_gpac
   rm already_
   do_make "CC=${cross_prefix}gcc AR=${cross_prefix}ar RANLIB=${cross_prefix}ranlib PREFIX= STRIP=${cross_prefix}strip"
   cd ..
-  rm ./bin/gcc/MP4Box # try and force a relink
+  rm ./bin/gcc/MP4Box* # try and force a relink/rebuild of the .exe
   cd applications/mp4box
   rm already_ran_make*
   do_make "CC=${cross_prefix}gcc AR=${cross_prefix}ar RANLIB=${cross_prefix}ranlib PREFIX= STRIP=${cross_prefix}strip"
@@ -1174,10 +1174,10 @@ build_apps() {
   if [[ $build_mplayer = "y" ]]; then
     build_mplayer
   fi
-  if [[ $build_ffmpeg_shared = "y" ]]; then
+  if [[ $build_shared_ffmpeg = "y" ]]; then
     build_ffmpeg ffmpeg shared
   fi
-  if [[ $build_ffmpeg_static = "y" ]]; then
+  if [[ $build_static_ffmpeg = "y" ]]; then
     build_ffmpeg ffmpeg
   fi
   if [[ $build_libav = "y" ]]; then
@@ -1200,8 +1200,8 @@ if [ -z "$cpu_count" ]; then
 fi
 original_cpu_count=$cpu_count # save it away for some that revert it temporarily
 gcc_cpu_count=1 # allow them to specify more than 1, but default to the one that's most compatible...
-build_ffmpeg_static=y
-build_ffmpeg_shared=n
+build_static_ffmpeg=y
+build_shared_ffmpeg=n
 build_libav=n
 build_libmxf=n
 build_mp4box=n
@@ -1215,8 +1215,8 @@ original_cflags= # no export needed, this is just a local copy
 while true; do
   case $1 in
     -h | --help ) echo "available options [with defaults]: 
-      --build-ffmpeg-shared=n 
-      --build-ffmpeg-static=y 
+      --build-shared-ffmpeg=n 
+      --build-static-ffmpeg=y 
       --gcc-cpu-count=1 [number of cpu cores set it higher than 1 if you have multiple cores and > 1GB RAM, this speeds up cross compiler build. FFmpeg build uses number of cores regardless.] 
       --disable-nonfree=y (set to n to include nonfree like libfdk-aac) 
       --sandbox-ok=n [skip sandbox prompt if y] 
@@ -1253,8 +1253,8 @@ while true; do
     -d         ) gcc_cpu_count=2; disable_nonfree="y"; sandbox_ok="y"; build_choice="multi"; git_get_latest="n" ; shift ;;
     --defaults ) gcc_cpu_count=2; disable_nonfree="y"; sandbox_ok="y"; build_choice="multi"; git_get_latest="n" ; shift ;;
     --build-choice=* ) build_choice="${1#*=}"; shift ;;
-    --build-ffmpeg-static=* ) build_ffmpeg_static="${1#*=}"; shift ;;
-    --build-ffmpeg-shared=* ) build_ffmpeg_shared="${1#*=}"; shift ;;
+    --build-static-ffmpeg=* ) build_static_ffmpeg="${1#*=}"; shift ;;
+    --build-shared-ffmpeg=* ) build_shared_ffmpeg="${1#*=}"; shift ;;
     --rebuild-compilers=* ) rebuild_compilers="${1#*=}"; shift ;;
     -- ) shift; break ;;
     -* ) echo "Error, unknown option: '$1'."; exit 1 ;;
