@@ -1138,7 +1138,7 @@ build_dependencies() {
   build_libxavs
   build_libsoxr
   build_libx264
-  #build_libx265
+  build_libx265
   build_lame
   build_twolame
   build_vidstab
